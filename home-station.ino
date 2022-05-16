@@ -11,6 +11,7 @@
 #include <BH1750FVI.h>
 
 #include "PMS.h"              // https://github.com/fu-hsi/pms
+#include "MQ131.h"            // https://github.com/ostaquet/Arduino-MQ131-driver
 
 #include "print_utils.h"
 
@@ -41,6 +42,12 @@ SoftwareSerial mhz19Serial(PIN_MHZ19_RX, PIN_MHZ19_TX); // (Uno example) create 
 SoftwareSerial pmsSerial(PIN_PMS_TX, PIN_PMS_RX);
 PMS pms(pmsSerial);
 PMS::DATA data;
+
+#define PIN_MQ_131_POWER 5
+#define PIN_MQ_131_SENSOR A3
+
+#define PIN_MP_503_POWER 6
+#define PIN_MP_503_SENSOR A6
 
 
 // VCC -> +5V
@@ -93,6 +100,8 @@ float altitude = 0;
 int pms_1_0 = 0;
 int pms_2_5 = 0;
 int pms_10_0 = 0;
+int ozone = 0;
+int tvoc = 0;
 
 char lcd_line[21];
 
@@ -120,6 +129,17 @@ void setup() {
 
   pmsSerial.begin(PMS_BAUDRATE);
 
+  //MQ131.begin(PIN_MQ_131_POWER, PIN_MQ_131_SENSOR, LOW_CONCENTRATION, 1000000, &Serial);
+  //Serial.println("Calibration in progress...");
+  //MQ131.calibrate();
+  //Serial.println("Calibration done!");
+  //Serial.print("R0 = ");
+  //Serial.print(MQ131.getR0());
+  //Serial.println(" Ohms");
+  //Serial.print("Time to heat = ");
+  //Serial.print(MQ131.getTimeToRead());
+  //Serial.println(" s");
+
   unsigned status = bme.begin(0x76, &Wire);
   if (DEBUG && !status) {
       Serial.println(F("Could not find a valid BME280 sensor, check wiring, address, sensor ID!"));
@@ -138,6 +158,9 @@ void setup() {
   pinMode(PIN_SHAKE, INPUT);
   pinMode(PIN_SOUND, INPUT);
   pinMode(PIN_SOUND_DIGITAL, INPUT);
+
+  digitalWrite(PIN_MQ_131_POWER, LOW);
+  digitalWrite(PIN_MP_503_POWER, LOW);
 }
 
 void loop() {
@@ -154,13 +177,11 @@ void loop() {
       lcd.noBacklight();
       mode = MODE_SLEEP;
     } else if (currentTime - activeModeStage > ACTIVE_MODE_STAGE_NORMAL) {
-      lcd.clear();
       printNormal();
     } else if (currentTime - activeModeStage > ACTIVE_MODE_STAGE_PME) {
       // |PM 1.0: xxxx (ug/m3)|
       // |PM 2.5: xxxx (ug/m3)|
       // |PM 10.: xxxx (ug/m3)|
-      lcd.clear();
       lcd.setCursor(0, 0);
       printLinePme_1_0();
       lcd.setCursor(0, 1);
@@ -177,7 +198,6 @@ void loop() {
       
       char str_float[5];
       
-      lcd.clear();
       lcd.setCursor(0, 0);
       printFloat(temperature, str_float);
       sprintf_P(lcd_line, PSTR("Temperature: %s \xDF""C"), (int)str_float);
@@ -196,21 +216,26 @@ void loop() {
       sprintf_P(lcd_line, PSTR("Altitude:   %4d m. "), (int)altitude);
       lcd.print(lcd_line);
     } else if (currentTime - activeModeStage > ACTIVE_MODE_STAGE_AIR_QUALITY) {
-      // |CO2: xxxx ppm       |
+      // |CO2:        xxxx ppm|
       // |Air quality:xxxx    |
-      
-      lcd.clear();
-      lcd.setCursor(0, 0);
-      lcd.print(F("CO2: "));
-      print4digits(co2, ' ');
-      lcd.print(F(" ppm"));
-      
-      lcd.setCursor(0, 1);
-      lcd.print(F("Air quality:"));
-      print4digits(mq135Value, ' ');
+      // |Ozone:      xxxx    |
+      // |TVOC:       xxxx    |
 
-      clearLcdLine(2);
-      clearLcdLine(3);
+      lcd.setCursor(0, 0);
+      sprintf_P(lcd_line, PSTR("CO2:        %4d ppm"), co2);
+      lcd.print(lcd_line);
+
+      lcd.setCursor(0, 1);
+      sprintf_P(lcd_line, PSTR("Air quality:%4d    "), mq135Value);
+      lcd.print(lcd_line);
+
+      lcd.setCursor(0, 2);
+      sprintf_P(lcd_line, PSTR("Ozone:      %4d    "), ozone);
+      lcd.print(lcd_line);
+
+      lcd.setCursor(0, 3);
+      sprintf_P(lcd_line, PSTR("TVOC:       %4d    "), tvoc);
+      lcd.print(lcd_line);
     }
   }
   
@@ -332,28 +357,6 @@ void printLinePme_2_5() {
 void printLinePme_10_0() {
   sprintf_P(lcd_line, PSTR("PM 10.: %4d (ug/m3)"), pms_10_0);
   lcd.print(lcd_line);
-}
-
-void print4digits(int value, char space) {
-  if (value < 0) {
-    lcd.print(F("----"));
-  } else if (value >= 0 && value <= 9) {
-    lcd.print(space);
-    lcd.print(space);
-    lcd.print(space);
-    lcd.print(value);
-  } else if(value >= 10 && value <= 99) {
-    lcd.print(space);
-    lcd.print(space);
-    lcd.print(value);
-  } else if(value >= 100 && value <= 999) {
-    lcd.print(space);
-    lcd.print(value);
-  } else if(value >= 1000 && value <= 9999) {
-    lcd.print(value);
-  } else if(value >= 10000) {
-    lcd.print(F("++++"));
-  }
 }
 
 void clearLcdLine(int line) {
